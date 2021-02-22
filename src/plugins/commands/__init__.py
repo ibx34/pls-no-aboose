@@ -1,5 +1,5 @@
-from . import Mod
+from . import Mod, Reminders, Admin
 
-def setup(dapper):
-    for cls in (Mod.Mod,):
-        dapper.add_cog(cls(dapper))
+def setup(pls):
+    for cls in (Mod.Mod,Reminders.Reminder,Admin.Admin):
+        pls.add_cog(cls(pls))

@@ -19,10 +19,9 @@ async def get_extensions():
 
     return found
 
-
 def mentions():
 
-    return discord.AllowedMentions(everyone=False, roles=False, users=True)
+    return discord.AllowedMentions(everyone=False, roles=False, users=False)
 
 
 def intents():
@@ -87,16 +86,31 @@ class Pls(commands.AutoShardedBot):
         self.configs = {}
         self.cases = collections.defaultdict(lambda: 0)
         self.prefixes = {}
-        # self.remove_command("help")
 
     async def start(self):
         self.session = start_session(self)
+
+        await super().start(config.TOKEN)
+
+    async def on_ready(self):
         self.pool = await init_db(db_config=config.DATABASE, size=150)
+
+        # for i in await self.pool.fetch("SELECT * FROM cases ORDER BY id DESC"):
+        #     self.cases[i["guild"]] = i["id"]
+        
+        for guild in await self.pool.fetch("SELECT * FROM guilds"):
+            muted_members = []
+            for member in await self.pool.fetch("SELECT * FROM muted_members WHERE guild = $1",guild["id"]):
+                muted_members.append(member['id'])
+
+            self.configs[guild["id"]] = {"mute_role": guild["muterole"],"modlogs": guild["modlogs"],"muted_members": muted_members}
+            self.prefixes[guild["id"]] = [x for x in guild["prefix"]]
 
         for name in await get_extensions():
             self.load_extension(name)
 
-        await super().start(config.TOKEN)
+        for shard in self.shards:
+            await self.change_presence(status=discord.Status.online, activity=discord.Game(f"Shawd {shard} of {len(self.shards)}"),shard_id=shard)
 
     async def process_commands(self, message):
 

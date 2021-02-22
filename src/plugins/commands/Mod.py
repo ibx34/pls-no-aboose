@@ -94,6 +94,17 @@ class Mod(Plugin):
                 return True
             return False
 
+    async def update_guild_config(self,guild):
+        async with self.pls.pool.acquire() as conn:
+            guild = await conn.fetchrow("SELECT * FROM guilds WHERE id = $1",guild.id)
+
+            muted_members = []
+            for member in await conn.fetch("SELECT * FROM muted_members WHERE guild = $1",guild.id):
+                muted_members.append(member['id'])
+
+            self.configs[guild["id"]] = {"mute_role": guild["muterole"],"modlogs": guild["modlogs"],"muted_members": muted_members}
+            self.prefixes[guild["id"]] = [x for x in guild["prefix"]]           
+
     @Plugin.listener()
     async def on_member_join(self, member):
         config = self.pls.configs.get(member.guild.id)
@@ -329,7 +340,7 @@ class Mod(Plugin):
             return await ctx.send(f"{ctx.author.mention} -> Your guild does not have a mute role.")
         
         role_id = config.get("mute_role")
-        await ctx.send(f"{ctx.author.mention} -> Your mute role is set to <@&{role_id}>. [Muted Members: {len(config.get('muted_members'))}]")
+        await ctx.send(f"{ctx.author.mention} -> Your mute role is set to <@&{role_id}> (ID: {role_id}). [Muted Members: {len(config.get('muted_members'))}]")
 
     @mute_role.command(name="create")
     @commands.guild_only()
@@ -338,7 +349,7 @@ class Mod(Plugin):
 
         config = self.pls.configs.get(ctx.guild.id)
         if not config:
-            await self.update_guild_config(ctx)
+            await self.update_guild_config(ctx.guild)
 
         if config.get("mute_role"):
             return await ctx.send(f"{ctx.author.mention} -> A mute role already exists.")
@@ -364,7 +375,7 @@ class Mod(Plugin):
     async def mute_role_update(self, ctx, role:discord.Role):
 
         if not self.pls.configs.get(ctx.guild.id):
-            await self.update_guild_config(ctx)
+            await self.update_guild_config(ctx.guild)
         
 
     @mute_role.command(name="set")
@@ -373,7 +384,7 @@ class Mod(Plugin):
     async def mute_role_set(self, ctx, *, role: discord.Role):
 
         if not self.pls.configs.get(ctx.guild.id):
-            await self.update_guild_config(ctx)
+            await self.update_guild_config(ctx.guild)
             
     @mute_role.command(name="unbind")
     @commands.guild_only()
@@ -381,7 +392,7 @@ class Mod(Plugin):
     async def mute_role_unbind(self, ctx, *, role: discord.Role):
 
         if not self.pls.configs.get(ctx.guild.id):
-            await self.update_guild_config(ctx)
+            await self.update_guild_config(ctx.guild)
 
     @commands.command(name="unmute")
     @commands.guild_only()

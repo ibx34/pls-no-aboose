@@ -112,6 +112,11 @@ class Pls(commands.AutoShardedBot):
         for shard in self.shards:
             await self.change_presence(status=discord.Status.online, activity=discord.Game(f"Shawd {shard} of {len(self.shards)}"),shard_id=shard)
 
+        self.guild = self.get_guild(config.GUILD)
+        self.guild_logs = self.guild.get_channel(config.GUILD_LOGS)
+        self.error_logs = self.guild.get_channel(config.ERROR_LOGS)
+        self.suggestions = self.guild.get_channel(config.SUGGESTIONS)
+
     async def process_commands(self, message):
 
         ctx = await self.get_context(message, cls=commands.Context)

@@ -17,7 +17,9 @@ guilds (
     "id" BIGINT UNIQUE,
     "muterole" BIGINT,
     "prefix" VARCHAR DEFAULT '.',
-    "modlogs" BIGINT
+    "modlogs" BIGINT,
+    "abooselogs" BIGINT,
+    "messagelogs" BIGINT
 );
 
 CREATE TABLE IF NOT EXISTS
@@ -46,4 +48,15 @@ warnings (
     "target" BIGINT,
     "reason" VARCHAR,
     "given_at" TIMESTAMP
+);
+CREATE TABLE
+IF NOT EXISTS cases (
+    "guild" BIGINT,
+    "moderator" BIGINT,
+    "reason" VARCHAR,
+    "target" BIGINT,
+    "role" BIGINT,
+    "id" BIGINT,
+    "modlog" BIGINT,
+    "type" VARCHAR
 );

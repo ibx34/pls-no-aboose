@@ -8,6 +8,7 @@ from discord.ext import commands
 
 from . import config
 from .sql import init_db
+import asyncio
 
 async def get_extensions():
 
@@ -86,6 +87,8 @@ class Pls(commands.AutoShardedBot):
         self.configs = {}
         self.cases = collections.defaultdict(lambda: 0)
         self.prefixes = {}
+        self._batch_lock = asyncio.Lock(loop=self.loop)
+        self._data_batch = []
 
     async def start(self):
         self.session = start_session(self)
@@ -95,15 +98,15 @@ class Pls(commands.AutoShardedBot):
     async def on_ready(self):
         self.pool = await init_db(db_config=config.DATABASE, size=150)
 
-        # for i in await self.pool.fetch("SELECT * FROM cases ORDER BY id DESC"):
-        #     self.cases[i["guild"]] = i["id"]
+        for i in await self.pool.fetch("SELECT * FROM cases ORDER BY id DESC"):
+            self.cases[i["guild"]] = i["id"]
         
         for guild in await self.pool.fetch("SELECT * FROM guilds"):
             muted_members = []
             for member in await self.pool.fetch("SELECT * FROM muted_members WHERE guild = $1",guild["id"]):
                 muted_members.append(member['id'])
 
-            self.configs[guild["id"]] = {"mute_role": guild["muterole"],"modlogs": guild["modlogs"],"muted_members": muted_members}
+            self.configs[guild["id"]] = {"mute_role": guild["muterole"],"modlogs": guild["modlogs"],"muted_members": muted_members or [],"messagelogs":guild["messagelogs"],"abooselogs":guild["abooselogs"]}
             self.prefixes[guild["id"]] = [x for x in guild["prefix"]]
 
         for name in await get_extensions():

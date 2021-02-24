@@ -1,5 +1,6 @@
 import argparse
 import datetime
+from datetime import timedelta
 import io
 import logging
 import re
@@ -17,6 +18,7 @@ from unidecode import unidecode
 
 from ... import Plugin
 from . import Reminders
+import asyncio
 
 log = logging.getLogger(__name__)
 
@@ -34,7 +36,7 @@ class BannedMember(commands.Converter):
         except ValueError:
             entity = discord.utils.find(lambda u: str(u.user) == argument, ban_list)
         if entity is None:
-            raise commands.BadArgument(f"{ctx.author.mention} ➜ That user wasn't previously banned...")
+            raise commands.BadArgument(f"{ctx.author.mention} -> That user wasn't previously banned...")
         return entity
 
 class MemberID(commands.Converter):
@@ -61,11 +63,11 @@ class Reason(commands.Converter):
     async def convert(self, ctx, argument):
         reason = f"[{ctx.author}] {argument}"
         if len(reason) > 520:
-            raise Exception(f"{ctx.author.mention} ➜ Your reason is too long. ({len(reason)}/512)")
+            raise Exception(f"{ctx.author.mention} -> Your reason is too long. ({len(reason)}/512)")
         return reason
 
 class Mod(Plugin):
-
+         
     async def apply_mute(self, member, reason):
         config = self.pls.configs.get(member.guild.id)
         if not config:
@@ -75,7 +77,7 @@ class Mod(Plugin):
                 query = """INSERT INTO muted_members(id,guild) VALUES($1,$2)"""
                 await self.pls.pool.execute(query,member.id,member.guild.id)
 
-                await member.add_roles(discord.Object(id=config.get("mute_role")), reason=reason)
+                await member.add_roles(discord.Object(id=config["mute_role"]), reason=reason)
                 config["muted_members"].append(member.id)
                 return True
             return False
@@ -89,7 +91,7 @@ class Mod(Plugin):
                 query = """DELETE FROM muted_members WHERE id = $1 AND guild = $2"""
                 await self.pls.pool.execute(query,member.id,member.guild.id)
 
-                await member.remove_roles(discord.Object(id=config.get("mute_role")), reason=reason)
+                await member.remove_roles(discord.Object(id=config["mute_role"]), reason=reason)
                 config["muted_members"].remove(member.id)
                 return True
             return False
@@ -122,7 +124,7 @@ class Mod(Plugin):
     async def ban(self,ctx,user: MemberID, *, reason: Reason=None):
 
         await  ctx.guild.ban(user=user,delete_message_days=7,reason=reason)
-        await ctx.send(f"{ctx.author.mention} ➜ Successfully banned **{user}**")
+        await ctx.send(f"{ctx.author.mention} -> Successfully banned **{user}**")
 
     @ban.command(name="match")
     @commands.guild_only()
@@ -141,7 +143,7 @@ class Mod(Plugin):
                 except:
                     failed +=1 
 
-        await ctx.send(f"{ctx.author.mention} ➜ Successfully banned **{count-failed}** of **{count}** users.")
+        await ctx.send(f"{ctx.author.mention} -> Successfully banned **{count-failed}** of **{count}** users.")
 
     @commands.command(name="softban")
     @commands.guild_only()
@@ -149,11 +151,11 @@ class Mod(Plugin):
     async def softban(self,ctx,user: discord.Member, *, reason: Reason=None):
         
         if not can_execute_action(ctx, ctx.author, user):
-            return await ctx.send(f"{ctx.author.mention} ➜ You cannot perform this action...")
+            return await ctx.send(f"{ctx.author.mention} -> You cannot perform this action...")
 
         await ctx.guild.ban(user=user, reason=reason, delete_message_days=7)
         await ctx.guild.unban(user=user, reason=f"Softban via {ctx.author} ({ctx.author.id})")
-        await ctx.send(f"{ctx.author.mention} ➜ Successfully soft-banned {user.mention}")
+        await ctx.send(f"{ctx.author.mention} -> Successfully soft-banned {user.mention}")
 
     @commands.command(name="multiban")
     @commands.guild_only()
@@ -167,15 +169,15 @@ class Mod(Plugin):
             except:
                 failed += 1
 
-        await ctx.send(f"{ctx.author.mention} ➜ Successfully banned **{len(users)-failed}** of **{len(users)}** users.")
+        await ctx.send(f"{ctx.author.mention} -> Successfully banned **{len(users)-failed}** of **{len(users)}** users.")
 
     @commands.command(name="kick")
     @commands.guild_only()
-    @commands.has_permissions(ban_members=True)
+    @commands.has_permissions(kick_members=True)
     async def kick(self,ctx,user: MemberID, *, reason: Reason=None):
 
         await  ctx.guild.kick(user=user,reason=reason)
-        await ctx.send(f"{ctx.author.mention} ➜ Successfully kicked **{user}**")
+        await ctx.send(f"{ctx.author.mention} -> Successfully kicked **{user}**")
 
     @commands.command(name="unban")
     @commands.guild_only()
@@ -183,34 +185,38 @@ class Mod(Plugin):
     async def unban(self,ctx,user: BannedMember, *, reason: Reason=None):
 
         await ctx.guild.unban(user.user,reason=reason)
-        await ctx.send(f"{ctx.author.mention} ➜ Successfully unbanned **{user.user}**")
+        await ctx.send(f"{ctx.author.mention} -> Successfully unbanned **{user.user}**")
 
     @commands.command(name="tempmute")
     @commands.guild_only()
     @commands.has_permissions(manage_roles=True, manage_messages=True)
     async def tempmute(self, ctx, user: discord.Member, duration: time.FutureTime, *, reason: Reason=None):
 
+        delta = datetime.datetime.utcnow() + timedelta(seconds=59)
+        if duration.dt <= delta:
+            return await ctx.send(f"{ctx.author.mention} -> Tempmutes must be longer than a minute")
+
         if Reminders.Reminder is None:
-            return await ctx.send(f"{ctx.author.mention} ➜ Tempmutes are currently not available, sorry... Try again later.")
+            return await ctx.send(f"{ctx.author.mention} -> Tempmutes are currently not available, sorry... Try again later.")
 
         role = discord.Object(id=self.pls.configs[ctx.guild.id]["mute_role"])
         role_id = self.pls.configs[ctx.guild.id]["mute_role"]
         confirm_muted = await self.apply_mute(user, reason)
         if confirm_muted is False:
-            return await ctx.send(f"{ctx.author.mention} ➜  That user is already muted...")
+            return await ctx.send(f"{ctx.author.mention} ->  That user is already muted...")
         
         reminder = Reminders.Reminder(self.pls)
         timer = await reminder.create_timer(duration.dt, 'tempmute', ctx.guild.id,ctx.author.id,str(user.id),created=ctx.message.created_at,message_id=role_id)
         delta = time.human_timedelta(duration.dt, source=timer.created_at)
-        await ctx.send(f"{ctx.author.mention} ➜ Successfully muted {user.mention} for {delta}.")
+        await ctx.send(f"{ctx.author.mention} -> Successfully muted {user.mention} for {delta}.")
 
 
     @Plugin.listener()
     async def on_tempmute_timer_complete(self, timer):
-        guild_id = timer["author"]
-        mod_id = timer["channel"]
-        member_id = timer["message"]
-        role_id = timer["message_id"]
+        guild_id = timer['author']
+        mod_id = timer['channel']
+        member_id = timer['message']
+        role_id = timer['message_id']
 
         await self.pls.wait_until_ready()
 
@@ -242,10 +248,11 @@ class Mod(Plugin):
             reason = f'Expiring self-mute made on {timer["created"]} by {member}'
 
         try:
-            await member.remove_roles(discord.Object(id=role_id), reason=reason)
+            await self.remove_mute(member,reason)
+            #await member.remove_roles(discord.Object(id=role_id), reason=reason)
         except discord.HTTPException:
             # if the request failed then just do it manually
-            async with self._batch_lock:
+            async with self.pls._batch_lock:
                 self._data_batch[guild_id].append((member_id, False))
 
     @commands.command(name="tempban")
@@ -254,14 +261,14 @@ class Mod(Plugin):
     async def tempban(self, ctx, user: discord.Member, duration: time.FutureTime, *, reason: Reason=None):
 
         if Reminders.Reminder is None:
-            return await ctx.send(f"{ctx.author.mention} ➜ Tempbans are currently not available, sorry... Try again later.")
+            return await ctx.send(f"{ctx.author.mention} -> Tempbans are currently not available, sorry... Try again later.")
 
         await user.ban(delete_message_days=7,reason=reason)
 
         reminder = Reminders.Reminder(self.pls)
         timer = await reminder.create_timer(duration.dt, 'tempban', ctx.guild.id,ctx.author.id,str(user.id),created=ctx.message.created_at)
         delta = time.human_timedelta(duration.dt, source=timer.created_at)
-        await ctx.send(f"{ctx.author.mention} ➜ Successfully banned {user.mention} for {delta}.")
+        await ctx.send(f"{ctx.author.mention} -> Successfully banned {user.mention} for {delta}.")
 
 
     @Plugin.listener()
@@ -297,14 +304,14 @@ class Mod(Plugin):
     async def mute(self, ctx, user: discord.Member, *, reason: Reason=None):
         
         if not can_execute_action(ctx, ctx.author, user):
-            return await ctx.send(f"{ctx.author.mention} ➜ You cannot perform this action...")
+            return await ctx.send(f"{ctx.author.mention} -> You cannot perform this action...")
 
         confirm_muted = await self.apply_mute(user, reason)
 
         if confirm_muted is False:
-            return await ctx.send(f"{ctx.author.mention} ➜  That user is already muted...")
+            return await ctx.send(f"{ctx.author.mention} ->  That user is already muted...")
 
-        await ctx.send(f"{ctx.author.mention} ➜  Successfully muted {user.mention}")
+        await ctx.send(f"{ctx.author.mention} ->  Successfully muted {user.mention}")
 
     @staticmethod
     async def update_channels(ctx,role):
@@ -400,13 +407,13 @@ class Mod(Plugin):
     async def unmute(self, ctx, user: discord.Member, *, reason: Reason=None):
         
         if not can_execute_action(ctx, ctx.author, user):
-            return await ctx.send(f"{ctx.author.mention} ➜ You cannot perform this action...")
+            return await ctx.send(f"{ctx.author.mention} -> You cannot perform this action...")
 
         confirm_muted = await self.remove_mute(user,reason)
         if confirm_muted is False:
-            return await ctx.send(f"{ctx.author.mention} ➜  That user is not muted...")
+            return await ctx.send(f"{ctx.author.mention} ->  That user is not muted...")
 
-        await ctx.send(f"{ctx.author.mention} ➜  Successfully unmuted {user.mention}")
+        await ctx.send(f"{ctx.author.mention} ->  Successfully unmuted {user.mention}")
 
     @commands.command(name="cleanup")
     @commands.guild_only()
